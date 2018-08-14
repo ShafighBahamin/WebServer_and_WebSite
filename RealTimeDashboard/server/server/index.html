@@ -1,0 +1,864 @@
+﻿<!doctype html>
+<html>
+<head>
+    <title>Data Center</title>
+    
+
+    <!--set up the style of the table that is going to be created later!-->
+    <style>
+        table, td, th {
+            border: 1px solid 
+                black;
+        }
+
+        table {
+            margin-top: 20px;
+            border-collapse: collapse;
+            width: 200%;
+        }
+
+        th {
+            height: 10px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!--get chart js so we can create the stacked bar chart-->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.1.4/Chart.min.js"></script>
+
+    <!--header for the visitor so they know what the site is about-->
+    <div class="header" id="header_div">
+        <h1>Data Information Center</h1>
+        <p>A website created to display the data in our database visually!</p>
+    </div>
+
+    <!--buttons that detemrine the queries-->
+    <div class="SelectionButtons" id="select_button">
+        <p>
+            Refresh Rate in minutes, must be greater than 15:
+        </p>
+        <input id="refresh_rate" type="text" placeholder="Default: 15 Minutes"><br />
+        <button onclick="callServer('WeekButton PRF')" class="WeekButton">Current Week PRF Data</button>
+        <button onclick="callServer('DayButton PRF')" class="DayButton">Current Day PRF Data</button>
+        <br />
+        <button onclick="callServer('WeekButton INC')" class="WeekButton">Current Week INC Data</button>
+        <button onclick="callServer('DayButton INC')" class="DayButton">Current Day INC Data</button>
+        <br />
+        <button onclick="callServer('WeekButton DSI')" class="WeekButton">Current Week DSI Data</button>
+        <button onclick="callServer('DayButton DSI')" class="DayButton">Current Day DSI Data</button>
+        <br />
+    </div>
+
+    <!--these divs are created to be refrenced later-->
+    <div id="div1">
+        <table id="data_table"></table>
+    </div>
+
+    <div id="version_legend" class="verLegend">
+    </div>
+
+    <div id="restore">
+    </div>
+
+    <style>
+        .header {
+            margin: 0;
+            padding: 80px;
+            text-align: center;
+            background: #1abc9c;
+            color: white;
+        }
+
+            .header h1 {
+                font-size: 40px;
+            }
+
+        .SelectionButtons {
+            padding: 1px;
+            text-align: center;
+            background: #FFFFFF;
+            color: white;
+        }
+
+            .SelectionButtons p {
+                color: #1abc9c;
+            }
+
+        .WeekButton {
+            background-color: lightsalmon;
+            color: white;
+            margin-top: 60px;
+            margin-left: 14px;
+            padding: 20px;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+        }
+
+            .WeekButton:hover {
+                background-color: #1abc9c; /* Green */
+                color: white;
+            }
+
+        .DayButton {
+            background-color: lightsalmon;
+            color: white;
+            margin-top: 60px;
+            margin-right: 14px;
+            padding: 20px;
+            font-size: 16px;
+            border: none;
+            cursor: pointer;
+        }
+
+            .DayButton:hover {
+                background-color: #1abc9c; /* Green */
+                color: white;
+            }
+    </style>
+
+    <!--dont delete this later-->
+    <p id="Data"></p>
+
+    <!--bring the socket code so we can communicate with the server-->
+    <script src="http://localhost:3000/socket.io/socket.io.js"></script>
+    <script type="text/javascript">
+
+        //attempt to connect to the server
+        var socket = io.connect('http://localhost:3000');
+        
+        //these are globals that I use 
+        var sort_type_arr = [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+        var versions = [];
+        var check_t = 0;
+        var check = 1;
+        var done = 1;
+        var max_num_cat = 10000000;
+        var max_yAxis_step = 50;
+        var bool = 0;
+        var node = {
+            version: "",
+            count: 0
+        };
+        var node_arr = [];
+        var ddc_arr = [{
+            array_node: [],
+            total_count: 0,
+            ddc: ""
+        }];
+        var table_columns = ["YearID", "QuarterID", "MonthID", "WeekID", "SiteID", "SRNumber", "SiteState", "Version", "Software Version", "Patch Number", "Effective Date", "CustID", "CallType", "OpenDateTime", "Code", "Description", "ModelNumber", "SerialNumber", "TroubleShootComments", "Comments", "IntComments", "DeepDiveCategory", "HigherCategory"]
+        var color = "#000000";
+        var labels = [];
+        var date_into_for_label_click = "";
+        var dta = [];
+        var info = "";
+        var res = "";
+        var row;
+        var selection;
+        var refresh_rate;
+        var a = 0;
+        var date = "";
+        var version_button_clicked = false;
+        var cant_click = false;
+        var hgt = 0;
+        var wdth = 0;
+
+        
+        window.addEventListener('resize', change_canvas);
+        //if the window size changes I change the canvas size to fit in the new window
+        function change_canvas() {
+            var ctx = document.getElementById("CursorLayer").getContext('2d');
+            var x = window.innerWidth
+                || document.documentElement.clientWidth
+                || document.body.clientWidth;
+
+            var y = window.innerHeight
+                || document.documentElement.clientHeight
+                || document.body.clientHeight;
+            
+            x -= 10;
+            y -=100;
+            if (x != wdth || y != hgt) {
+                ctx.canvas.width = x;
+                ctx.canvas.height = y;
+                ctx.redraw();
+            }
+            wdth = x;
+            hgt = y;
+        }
+        
+        //this removes the buttons that are created either "version_buttons or "restore_buttons"
+        function remove_buttons(elem) {
+            var myNode = document.getElementById(elem);
+            while (myNode.firstChild) {
+                myNode.removeChild(myNode.firstChild);
+            }
+        }
+
+        //displays all of the datasets in the chart if the resrtore button is clicked
+        function restore_chart(chart, steps) {
+            //socket.emit('print', steps);
+            for (var i = 0; i < chart.data.datasets.length; i++) {
+                chart.data.datasets[i].hidden = false;
+            }
+            chart.options.scales.yAxes[0].ticks.stepSize = Math.floor(steps / 3);
+            chart.update();
+        }
+
+        // looks for the version that was clicked and only displays that version on the chart
+        function querry_version(ver, chart, version_dict, steps) {
+            var idx = 0;
+            for (var i = 0; i < chart.data.datasets.length; i++) {
+                //label is formated like this "version: 10.10 Count:10"
+                var tmp = chart.data.datasets[i].label.split(' ');
+                var tmp_two = ver.trim();
+                if (tmp[1] != tmp_two) {
+                    chart.data.datasets[i].hidden = true;
+                }
+                else {
+
+                    chart.data.datasets[i].hidden = false;
+                    idx = i;
+                }
+            }
+            //set the stepsize of the chart to the greatest data point  plus or minus 1
+            max_yAxis_step = 0;
+            for (var i = 0; i < chart.data.datasets[idx].data.length; i++) {
+                if (max_yAxis_step < chart.data.datasets[idx].data[i]) {
+                    max_yAxis_step = chart.data.datasets[idx].data[i];
+                }
+            }
+            if (max_yAxis_step <= 2) {
+                chart.options.scales.yAxes[0].ticks.stepSize = max_yAxis_step+1;
+            }
+            else {
+                chart.options.scales.yAxes[0].ticks.stepSize = Math.floor(max_yAxis_step-1);
+            }
+            max_yAxis_step = steps;
+            chart.update();
+        }
+
+        //on recieving this call delete all of the contents of the window so that its ready to display the chart
+        socket.on('data', function (msg) {
+            var elem = document.getElementById("data_table");
+            if (elem != null) {
+                elem.parentNode.removeChild(elem);
+            }
+            elem = document.getElementById("header_div");
+            if (elem != null) {
+                elem.remove();
+            }
+            elem = document.getElementById("select_button");
+            if (elem != null) {
+                elem.remove();
+            }
+            //socket.emit("print", "data");
+            elem = document.getElementById("CursorLayer");
+
+            while (elem != null) {
+                elem.parentNode.removeChild(elem);
+                elem = document.getElementById("CursorLayer");
+            }
+
+            remove_buttons("version_legend");
+            createChart(msg);
+        });
+
+        //this call is for fiscal week return value
+        socket.on('accept', function (msg) {
+            date_into_for_label_click = msg;
+        });
+
+        //this is the rejection message for the query promises
+        socket.on('decline', function (msg) {
+            alert(msg);
+            cant_click = false;
+        });
+
+        //this call is for getting the date the query was done on and display at top of window
+        socket.on('date', function (msg) {
+            date = msg;
+        });
+
+        //when one of the stacked bars is clicked this function is callled to create the table
+        function insertRows(data, ddc, ver_pat, date_info) {
+
+            //this button is going to restore the chart to when it was first displayed
+            var container = document.getElementById("version_legend");
+            var btn = document.createElement("button");
+            btn.id = "restore_button";
+            btn.style.backgroundColor = random_color();
+            container.style.justifyContent = "center";
+            btn.innerHTML = "Restore Chart";
+            btn.onclick = function () {
+                ddc_arr = [{
+                    array_node: [],
+                    total_count: 0,
+                    ddc: ""
+                }];
+                version_button_clicked = false;
+                createChart(data);
+            };
+            container.appendChild(btn);
+
+            //extracting the version and the patch from the ver_pat argument
+            var patch = "";
+            var v = "";
+            for (var i = 0; i < ver_pat.length; i++) {
+                if (isNaN(parseInt(ver_pat[i])) && ver_pat[i] != " " && ver_pat[i] != '.') {
+                    patch = ver_pat[i];
+                }
+                else if ((!isNaN(parseInt(ver_pat[i])) && ver_pat[i] != " ") || ver_pat[i] == '.') {
+                    v += ver_pat[i];
+                }
+            }
+            //check to make sure the ver_pat has a valid patch if not then rewrite the values for patch and v
+            var len = ver_pat.length;
+            if (ver_pat[len-1] == '0'){
+                patch = ver_pat.slice(len - 4, len - 1);
+                v = ver_pat.slice(0, len - 3);
+            }
+
+            //these vars are used when creating the table
+            var totalRows = 1;
+            var cellsInRow = table_columns.length;
+            var id = 0;
+            var max = 10;
+            var row;
+            var cell;
+            var cellText;
+            var elem = document.getElementById("CursorLayer");
+
+            //get rid of the chart
+            while (elem != null) {
+                elem.parentNode.removeChild(elem);
+                elem = document.getElementById("CursorLayer");
+            }
+
+            //create the tble element
+            var div1 = document.getElementById('div1');
+            var tbl = document.createElement("table");
+            tbl.width = "100%";
+            tbl.id = "data_table";
+
+            //this for loop creates the first row of the table which is the labels
+            for (var r = 0; r < totalRows; r++) {
+                row = document.createElement("tr");
+
+                for (var c = 0; c < cellsInRow; c++) {
+                    var cell = document.createElement("td");
+                    //if one of the lables is clicked determine the sort type and sort the table based on that label values
+                    cell.addEventListener("click", function () {
+                        determine_sort(this);
+                    });
+                    if (table_columns[c] == "TroubleShootComments") {
+
+                        cell.style = "width: 30%";
+                    }
+                    cell.id = c.toString();
+                    cellText = document.createTextNode(table_columns[c]);
+                    cell.appendChild(cellText);
+                    row.appendChild(cell);
+
+                }
+
+                tbl.appendChild(row); // add the row to the end of the table body
+
+            }
+            
+            //the date_info is a 2d array and contains only one element, extract it and parse it to get the date values for the table
+            var date = date_info[0];
+            var m = parseInt(date[6]);
+            if ((m).toString().length == 1) {
+                date[6] = '0' + m.toString();
+            }
+
+            //this for loop goes through the entire data array and sees which objects in the array have the same patch, version and deepdive category 
+            //and inserts the that object in the table in row format
+            for (var i = 0; i < data.length; i++) {
+                var p = data[i].PATCHNUMBER.trim();
+                if (data[i].DEEPDIVECATEGORY == ddc && data[i].VERSION == v && p == patch) {
+                    row = document.createElement('tr');
+
+                    //date[0] is the year id
+                    cell = document.createElement("td");
+                    cellText = document.createTextNode(date[0]);
+                    cell.appendChild(cellText);
+                    row.appendChild(cell);
+
+                    //date[5] is the quarter id
+                    cell = document.createElement("td");
+                    cellText = document.createTextNode(date[5]);
+                    cell.appendChild(cellText);
+                    row.appendChild(cell);
+
+                    //date[6] is the month id
+                    cell = document.createElement("td");
+                    cellText = document.createTextNode(date[6]);
+                    cell.appendChild(cellText);
+                    row.appendChild(cell);
+
+                    //date[1] is the week id
+                    cell = document.createElement("td");
+                    cellText = document.createTextNode(date[1]);
+                    cell.appendChild(cellText);
+                    row.appendChild(cell);
+
+
+                    //create cells here -- I removed alot due to security reasons
+
+                    tbl.appendChild(row);
+                }
+            }
+
+            a++;
+            div1.appendChild(tbl); // appends <table> into <div1>
+
+        }
+
+        //generates a random color 
+        function random_color() {
+            var color = '#';
+            var color_vals = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
+            for (var i = 0; i < 6; i++) {
+                var r = Math.floor((Math.random() * 16) + 1);
+                color += color_vals[r - 1];
+            }
+            return color;
+        }
+
+        //determines if the table sort should be a sort based on a string or integers
+        function determine_sort(cell) {
+            var id = parseInt(cell.id);
+            if (id <= 5) {
+                int_sort(cell.id);
+            }
+            else {
+                char_sort(cell.id);
+            }
+        }
+
+        //this sort is for the table columns that contain integers
+        function int_sort(id) {
+            var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+            table = document.getElementById("data_table");
+            switching = true;
+            //ascending first
+            dir = "asc";
+            while (switching) {
+                switching = false;
+                rows = table.getElementsByTagName("TR");
+                for (i = 1; i < (rows.length - 1); i++) {
+                    shouldSwitch = false;
+                    x = rows[i].getElementsByTagName("TD")[id];
+                    y = rows[i + 1].getElementsByTagName("TD")[id];
+                    if (dir == "asc") {
+                        var l = parseInt(x.innerHTML);
+                        var r = parseInt(y.innerHTML);
+                        if (l > r) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (dir == "desc") {
+                        var l = parseInt(x.innerHTML);
+                        var r = parseInt(y.innerHTML);
+                        if (l < r) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    }
+                }
+                if (shouldSwitch) {
+                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                    switching = true;
+                    switchcount++;
+                } else {
+                    if (switchcount == 0 && dir == "asc") {
+                        //change the direction of the sort
+                        dir = "desc";
+                        switching = true;
+                    }
+                }
+            }
+        }
+
+        //this sort is for string sorting 
+        function char_sort(id) {
+            var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+            table = document.getElementById("data_table");
+            switching = true;
+            dir = "asc";
+            while (switching) {
+                switching = false;
+                rows = table.getElementsByTagName("TR");
+                for (i = 1; i < (rows.length - 1); i++) {
+                    shouldSwitch = false;
+                    x = rows[i].getElementsByTagName("TD")[id];
+                    y = rows[i + 1].getElementsByTagName("TD")[id];
+                    if (dir == "asc") {
+                        if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (dir == "desc") {
+                        if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    }
+                }
+                if (shouldSwitch) {
+                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                    switching = true;
+                    switchcount++;
+                } else {
+                    if (switchcount == 0 && dir == "asc") {
+                        dir = "desc";
+                        switching = true;
+                    }
+                }
+            }
+        }
+
+        //if one of the query buttons is clicked, call the server with its id
+        function callServer(id) {
+
+            //make sure that no other calls can be made if one call has alrady has been made
+            if (cant_click == false) {
+                cant_click = true;
+                refresh_rate = 15;
+                var tmp = document.getElementById("refresh_rate").value;
+                if (!isNaN(parseInt(tmp))) {
+                    if (tmp > 15) {
+                        refresh_rate = tmp;
+                    }
+                }
+                
+                socket.emit('querry', id + " " + refresh_rate.toString());
+            }
+        }
+        
+        //here we create the chart
+        function createChart(msg) {
+
+            //if the table has been created deleted so we can draw the chart
+            var elem = document.getElementById("data_table");
+            while (elem != null) {
+                elem.parentNode.removeChild(elem);
+                elem = document.getElementById("data_table");
+            }
+
+
+            var categories = [];
+
+            //here we populate the global data structures with the information in the data that we got from the server
+            for (var j = 0; j < msg.length; j++) {
+
+                var version_patch = msg[j].VERSION + msg[j].PATCHNUMBER;
+
+                //if we havent seen the version+patch before store it for the stack bars
+                if (!versions.includes(version_patch)) {
+                    versions.push(version_patch);
+                }
+
+                var str = msg[j].DEEPDIVECATEGORY;
+
+                var idx = -1;
+                var index = -1;
+
+                //see if the deepdivecategory array alrady contains the ddc from the data[i] object
+                for (var i = 0; i < ddc_arr.length; i++) {
+                    if (ddc_arr[i].ddc == str) {
+                        idx = i;
+                    }
+                }
+
+                //if ddc is already contained then see if that version is already in the ddc_arr array of versions
+                if (idx != -1) {
+                    ddc_arr[idx].total_count++;
+                    for (var i = 0; i < ddc_arr[idx].array_node.length; i++) {
+                        if (ddc_arr[idx].array_node[i].version == version_patch) {
+                            index = i;
+                        }
+                    }
+                    if (index != -1) {
+                        //increase the version count in a ddc 
+                        ddc_arr[idx].array_node[index].count++;
+                    } else {
+                        //if the version is not in the ddc_arr array of versions, insert it 
+                        var nde = {
+                            version: version_patch,
+                            count: 1
+                        }
+                        ddc_arr[idx].array_node.push(nde);
+                    }
+                }
+                else {
+
+                    //if the ddc_array does not contain the deepdivecategory then insert it along with the version and set count
+                    var nde = {
+                        version: version_patch,
+                        count: 1
+                    }
+                    var nde_arr = [];
+                    nde_arr.push(nde);
+                    ddc_arr[check_t] = { array_node: nde_arr, total_count: 1, ddc: str };
+                    check_t++;
+                }
+
+            }
+
+            var vers = [{
+                version: "",
+                data: []
+
+            }];
+
+            //here I create the canvas to displasy the chart 
+            if (document.getElementById("CursorLayer") != null) {
+                var elem = document.getElementById("CursorLayer");
+                var canvas = document.createElement('canvas');
+                elem.parentNode.insertBefore(canvas, elem.nextSibling);
+                elem.parentNode.removeChild(elem);
+                canvas.id = "CursorLayer";
+                canvas.width = window.innerWidth-10;
+                canvas.height = window.innerHeight-100;
+                canvas.style.zIndex = 8;
+                canvas.style.position = "relative";
+                canvas.style.border = "1px solid";
+                document.body.appendChild(canvas);
+                cursorLayer = document.getElementById("CursorLayer");
+                hgt = canvas.height;
+                wdth = canvas.width;
+            }
+            else {
+                var canvas = document.createElement('canvas');
+                canvas.id = "CursorLayer";
+                canvas.width = window.innerWidth-10;
+                canvas.height = window.innerHeight - 100;
+                canvas.style.zIndex = 8;
+                canvas.style.position = "relative";
+                canvas.style.border = "1px solid";
+                hgt = canvas.height;
+                wdth = canvas.width;
+                document.body.appendChild(canvas);
+                cursorLayer = document.getElementById("CursorLayer");
+
+            }
+
+            var backgrnd_colors = [];
+            backgrnd_colors.push(color);
+
+            //get he context for the canvas 
+            var ctx = document.getElementById("CursorLayer").getContext('2d');
+
+            //get he highest total count for all categories
+            for (var i = 0; i < ddc_arr.length; i++) {
+
+                if (ddc_arr[i].total_count > max_yAxis_step) {
+                    max_yAxis_step = ddc_arr[i].total_count;
+                }
+            }
+
+
+            //here I create the chart
+            var myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: labels, //we will add labels later
+                    datasets: []    //we will add datasets later
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    animation: {
+                        onComplete: function () {
+
+                            //write the total count at top of bars each time the animation of the chart is completed
+                            var total_counts = new Array(ddc_arr.length).fill(0);
+                            var pos = [];
+                            for (var i = 0; i < ddc_arr.length; i++) {
+                                var x_y = {
+                                    x: 0,
+                                    y: 100000000
+                                };
+                                pos.push(x_y);
+                            }
+
+                            var chartInstance = this.chart;
+                                ctx = chartInstance.ctx;
+                            ctx.textAlign = 'center';
+                            ctx.textBaseline = 'bottom';
+                            //go through all the datasets
+                            this.data.datasets.forEach(function (dataset, i) {
+                                //get hte meta for the datasets-- contains position information and count information
+                                var meta = chartInstance.controller.getDatasetMeta(i);
+                                meta.data.forEach(function (bar, index) {
+                                    //get the data and see if the dataset is displayed and if it is get the information and store
+                                    var data = dataset.data[index];
+                                    if (dataset.hidden != true) {
+                                        total_counts[index] += data;
+                                        //get the greatest x point for the bar
+                                        if (pos[index].x < bar._model.x) {
+                                            pos[index].x = bar._model.x;
+                                        }
+                                        //get the lowest point for the height of the bar
+                                        if (pos[index].y > bar._model.y) {
+                                            pos[index].y = bar._model.y;
+                                        }
+                                    }
+                                });
+                            });
+                            //loop through all of bars and display the total count at top of the bars if is not 0
+                            for (var i = 0; i < pos.length; i++) {
+                                if (total_counts[i] != 0) {
+                                    ctx.fillText(total_counts[i], pos[i].x, pos[i].y - 5);
+                                }
+                            }
+                        }
+                    },
+                    legend: {
+                        display: false,
+                        labels: {
+                            fontColor: "#000000",
+                        }
+                    },
+                    onClick: function (evt) {
+                        //if any of the bars is clicked call the insertRows func to create the table
+                        var activePoints = myChart.getElementAtEvent(evt);
+                        var firstPoint = activePoints[0];
+                        var deepDiveCat = myChart.data.labels[firstPoint._index];
+                        var ver_pat = myChart.data.datasets[firstPoint._datasetIndex].label;
+                        var tmp_two = ver_pat.split(' ');
+                        //clear window to show the table
+                        remove_buttons("version_legend");
+                        insertRows(msg, deepDiveCat, tmp_two[1], date_into_for_label_click);
+                    },
+                    scales: {
+                        yAxes: [{
+                            stacked: true,
+                            ticks: {
+                                stepSize: Math.floor((max_yAxis_step+20) / 3)
+                            }
+                        }],
+                        xAxes: [{
+                            stacked: true,
+                            ticks: {
+                                fontSize: 12,
+                                fontColor: "#000000",
+                                autoSkip: false,
+                                beginAtZero: true
+                            }
+                        }]
+                    }
+                }
+            });
+            myChart.id = "chart";
+            var versions_color = [];
+
+            //get a random color for each unique version patch combonation
+            for (var i = 0; i < versions.length; i++) {
+                versions_color.push(random_color());
+            }
+
+
+            //sort the ddc_arr based on the total count of each category
+            ddc_arr.sort(function (a, b) { return (a.total_count < b.total_count) ? 1 : ((b.total_count < a.total_count) ? -1 : 0); });
+
+            //this is for displaying the correct number of categories in the chart
+            if (max_num_cat > ddc_arr.length) {
+                max_num_cat = ddc_arr.length;
+            }
+
+            //insert each category as a label 
+            for (var i = 0; i < max_num_cat; i++) {
+                labels.push(ddc_arr[i].ddc);
+            }
+
+            //set each dataset in the chart and assign the label and data and background color accordinly
+            for (var i = 0; i < versions.length; i++) {
+                myChart.data.datasets.push({
+                    label: "",
+                    data: [],
+                    backgroundColor: []
+                });
+                myChart.data.datasets[i].data = Array(max_num_cat).fill(0);
+                myChart.data.datasets[i].label = "Version: "+versions[i]+" Count";
+                myChart.data.datasets[i].backgroundColor = versions_color[i];
+            }
+
+            //clear the version buttons and create a new set for each version patch combo
+            remove_buttons("version_legend");
+            var container = document.getElementById("version_legend");
+            var description = document.createElement("h2");
+            var tmp = date.split(' ');
+            description.innerHTML = tmp[0] + " Versions" + " for TimeStamp: " + tmp[1];
+            container.appendChild(description);
+            for (var i = 0; i < versions.length; i++) {
+                var btn = document.createElement("button");
+                btn.id = "btn";
+                btn.style.backgroundColor = versions_color[i];
+                btn.innerHTML = versions[i];
+                btn.onclick = function () {
+                    //if clicked then display only that version patch combo in the chart
+                    version_button_clicked = true;
+                    querry_version(this.innerHTML, myChart, vers, max_yAxis_step);
+                };
+                container.appendChild(btn);
+            }
+
+            //this is for the restore chart functionality in case the user wants to see the chart as it was in the begining
+            var container = document.getElementById("version_legend");
+            var btn = document.createElement("button");
+            btn.id = "restore_button";
+            btn.style.backgroundColor = random_color();
+            btn.innerHTML = "Restore Chart";
+            btn.onclick = function () {
+                version_button_clicked = false;
+                restore_chart(myChart, max_yAxis_step+20);
+            };
+            container.appendChild(btn);
+
+            //populate the chart with data
+            for (var i = 0; i < versions.length; i++) {
+
+                for (var j = 0; j < max_num_cat; j++) {
+                    var idx = -1;
+                    //check to see if a category[j] contains a version[i]
+                    for (var k = 0; k < ddc_arr[j].array_node.length; k++) {
+                        if (ddc_arr[j].array_node[k].version == versions[i]) {
+                            idx = k;
+                        }
+                    }
+                    if (idx != -1) {
+                        //correctly match versions with ddcs and insert specific version counts into the data array of version datasets
+                        myChart.data.datasets[i].data[j] = ddc_arr[j].array_node[idx].count;
+                    }
+                }
+            }
+
+            myChart.update();
+
+            //reset globals for later use.
+            versions = [];
+            versions_color = [];
+            check_t = 0;
+            bool = 0;
+            labels = [];
+            check = 1;
+            dta = [];
+            info = "";
+            res = "";
+            node = {
+                version: "",
+                count: 0
+            };
+            node_arr = [];
+            done = 1;
+        }
+    </script>
+
+</body>
+</html>

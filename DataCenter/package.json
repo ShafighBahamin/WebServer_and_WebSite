@@ -1,0 +1,20 @@
+{
+  "name": "josn",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "chart.js": "^2.7.2",
+    "express": "^4.16.3",
+    "msnodesqlv8": "^0.6.6",
+    "mssql": "^4.1.0",
+    "socket.io": "^2.1.1",
+    "tedious": "^2.6.1"
+  }
+}

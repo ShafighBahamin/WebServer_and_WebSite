@@ -1,0 +1,5 @@
+server GSOWS-FQL7KSI
+
+username shafigh.bahamin@gilbarco.com
+
+password: gilbarco password

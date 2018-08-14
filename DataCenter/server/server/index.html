@@ -1,0 +1,786 @@
+﻿<!doctype html>
+<html>
+<head>
+    <title>Data Center</title>
+    <!--style for tables-->
+    <style>
+        table, td, th {
+            border: 1px solid black;
+        }
+
+        table {
+            margin-top: 20px;
+            border-collapse: collapse;
+            width: 200%;
+        }
+
+        th {
+            height: 10px;
+        }
+    </style>
+</head>
+
+<body>
+    <!--get the chart js library so that we can display the chart-->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.1.4/Chart.min.js"></script>
+  
+    <div class="header">
+        <h1>Data Information Center</h1>
+        <p>A website created to display the data in our database visually!</p>
+    </div>
+
+    <!--create the inout boxes for the time information-->
+    <div class="dropdown">
+        <p>
+            Start Date:
+        </p>
+        <input id="From_Year_input" type="text" placeholder="Year from 2016 and up...">
+        <input id="From_Week_input" type="text" placeholder="Week from 1 to 52...">
+        <p>
+            To Date:
+        </p>
+        <input id="To_Year_input" type="text" placeholder="Year from 2016 and up...">
+        <input id="To_Week_input" type="text" placeholder="Week from 1 to 52..."><br />
+        <p>
+            Max Number of Categories:
+        </p>
+        <input id="Max_Number_Category" type="text" placeholder="Default Number: 30"><br />
+        <button onclick="callServer()" class="dropbtn">Display Week Data</button>
+    </div>
+
+    <div id="div1">
+        <table id="data_table"></table>
+    </div>
+
+
+    <div id="version_legend">
+    </div>
+
+    <div id="restore">
+    </div>
+
+    <!-- define the styles for all the divs and classes-->
+    <style>
+        
+        .header {
+            padding: 80px;
+            text-align: center;
+            background: #1abc9c;
+            color: white;
+        }
+
+            .header h1 {
+                font-size: 40px;
+            }
+
+        .dropdown {
+            padding: 1px;
+            text-align: center;
+            background: #FFFFFF;
+            color: white;
+        }
+
+            .dropdown input[type=text] {
+                padding: 12px;
+                margin-top: 8px;
+                margin-right: 24px;
+                font-size: 14px;
+            }
+
+            .dropdown p {
+                color: #1abc9c;
+            }
+
+        .dropbtn {
+            background-color: lightsalmon;
+            color: white;
+            margin-top: 14px;
+            padding: 20px;
+            font-size: 16px;
+            border: none;
+            margin-right: 24px;
+            cursor: pointer;
+        }
+
+            .dropbtn:hover {
+                background-color: #1abc9c; /* Green */
+                color: white;
+            }
+    </style>
+
+    <p id="demo"></p>
+    <!--<script src="/socket.io/socket.io.js"></script>-->
+    <!--<script src="http://localhost:3000/C:/Users/shafigh.bahamin/Desktop/Summer_Internship/josn/node_modules/chart.js"></script>-->
+   
+    <!--get the socket.io lib so that we can connect to server-->
+    <script src="http://localhost:3000/socket.io/socket.io.js"></script>
+    <script type="text/javascript">
+
+        //attempt a connectionz
+        var socket = io.connect('http://localhost:3000');
+
+
+        //$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+        //globals 
+        var sort_type_arr = [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1];
+        var versions = [];
+        var check_t = 0;
+        var check = 1;
+        var done = 1;
+        var max_num_cat = 30;
+        var max_yAxis_step = 50;
+        var bool = 0;
+        var node = {
+            version: "",
+            count: 0
+        };
+        var node_arr = [];
+        var ddc_arr = [{
+            array_node: [],
+            total_count: 0,
+            ddc: ""
+        }];
+        var table_columns = ["YearID", "QuarterID", "MonthID", "WeekID", "SiteID", "SRNumber", "SiteState", "Version", "Software Version", "Patch Number", "Effective Date", "CustID", "CallType", "OpenDateTime", "Code", "Description", "ModelNumber", "SerialNumber", "TroubleShootComments", "Comments", "IntComments", "DeepDiveCategory", "HigherCategory"]
+
+        //"#FFA07A" light salmon
+        var color = "#000000";
+        var labels = [];
+        var date_into_for_label_click = "";
+        var dta = [];
+        var info = "";
+        var res = "";
+        var row;
+        //$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+        //removes elements from divs
+        function remove_buttons(elem) {
+            var myNode = document.getElementById(elem);
+            while (myNode.firstChild) {
+                myNode.removeChild(myNode.firstChild);
+            }
+        }
+
+        //sets the display of the bars in the chart to true
+        function restore_chart(chart, steps) {
+            //socket.emit('print', steps);
+            for (var i = 0; i < chart.data.datasets.length; i++) {
+                chart.data.datasets[i].hidden = false;
+            }
+            chart.options.scales.yAxes[0].ticks.stepSize = Math.floor(steps / 3)-1;
+            chart.update();
+        }
+
+        //hides all bars except the bars that correspond to the version selected
+        function querry_version(ver, chart, version_dict, steps) {
+            var idx = 0;
+            for (var i = 0; i < chart.data.datasets.length; i++) {
+                if (chart.data.datasets[i].label != ver) {
+                    chart.data.datasets[i].hidden = true;
+                }
+                else {
+                    chart.data.datasets[i].hidden = false;
+                    idx = i;
+                }
+            }
+            //calculate the max height of bars and determine the intervals
+            var step = 0;
+            for (var i = 0; i < chart.data.datasets[idx].data.length; i++) {
+                if (step < chart.data.datasets[idx].data[i]) {
+                    step = chart.data.datasets[idx].data[i];
+                }
+            }
+            if (step <= 2) {
+                chart.options.scales.yAxes[0].ticks.stepSize = step+1;
+            }
+            else {
+                chart.options.scales.yAxes[0].ticks.stepSize = Math.floor(step -1);
+            }
+            max_yAxis_step = steps;
+            chart.update();
+
+        }
+        
+        //when data is being sent by server collect it
+        socket.on('data', function (msg) {
+            done = 0;
+            //done is sent by the server when all the data has been transfered
+            if (msg == "done") {
+                if (bool == 0) {
+                    
+                    var vers = [{
+                        version: "",
+                        data: []
+
+                    }];
+
+                    //create the canvas so we can draw the chart--if it already exists delete it and create a new one
+                    if (document.getElementById("CursorLayer") != null) {
+                        var elem = document.getElementById("CursorLayer");
+                        var canvas = document.createElement('canvas');
+                        elem.parentNode.insertBefore(canvas, elem.nextSibling);
+                        elem.parentNode.removeChild(elem);
+                        canvas.id = "CursorLayer";
+                        canvas.width = 200;
+                        canvas.height = 200;
+                        canvas.style.zIndex = 8;
+                        canvas.style.position = "absolute";
+                        canvas.style.border = "1px solid";
+                        var body = document.getElementsByTagName("body")[0];
+                        document.body.appendChild(canvas);
+                        cursorLayer = document.getElementById("CursorLayer");
+                    }
+                    else {
+                        var canvas = document.createElement('canvas');
+                        canvas.id = "CursorLayer";
+                        canvas.width = 200;
+                        canvas.height = 200;
+                        canvas.style.zIndex = 8;
+                        canvas.style.position = "absolute";
+                        canvas.style.border = "1px solid";
+                        var body = document.getElementsByTagName("body")[0];
+                        document.body.appendChild(canvas);
+                        cursorLayer = document.getElementById("CursorLayer");
+
+                    }
+
+                    var backgrnd_colors = [];
+                    backgrnd_colors.push(color);
+
+                    //get context
+                    var ctx = document.getElementById("CursorLayer").getContext('2d');
+
+                    //get the biggest bar height
+                    for (var i = 0; i < ddc_arr.length; i++) {
+                        if (ddc_arr[i].total_count > max_yAxis_step) {
+                            max_yAxis_step = ddc_arr[i].total_count;
+                        }
+                    }
+
+                    //create chart
+                    var myChart = new Chart(ctx, {
+                        type: 'bar',
+                        data: {
+                            labels: labels,
+                            datasets: []
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            animation: {
+                                onComplete: function () {
+
+                                    //write the total count at top of bars each time the animation of the chart is completed
+                                    var total_counts = new Array(ddc_arr.length).fill(0);
+                                    var pos = [];
+                                    for (var i = 0; i < ddc_arr.length; i++) {
+                                        var x_y = {
+                                            x: 0,
+                                            y: 100000000
+                                        };
+                                        pos.push(x_y);
+                                    }
+
+                                    var chartInstance = this.chart;
+                                    ctx = chartInstance.ctx;
+                                    ctx.textAlign = 'center';
+                                    ctx.textBaseline = 'bottom';
+                                    //go through all the datasets
+                                    this.data.datasets.forEach(function (dataset, i) {
+                                        //get hte meta for the datasets-- contains position information and count information
+                                        var meta = chartInstance.controller.getDatasetMeta(i);
+                                        meta.data.forEach(function (bar, index) {
+                                            //get the data and see if the dataset is displayed and if it is get the information and store
+                                            var data = dataset.data[index];
+                                            if (dataset.hidden != true) {
+                                                total_counts[index] += data;
+                                                //get the greatest x point for the bar
+                                                if (pos[index].x < bar._model.x) {
+                                                    pos[index].x = bar._model.x;
+                                                }
+                                                //get the lowest point for the height of the bar
+                                                if (pos[index].y > bar._model.y) {
+                                                    pos[index].y = bar._model.y;
+                                                }
+                                            }
+                                        });
+                                    });
+                                    //loop through all of bars and display the total count at top of the bars if is not 0
+                                    for (var i = 0; i < pos.length; i++) {
+                                        if (total_counts[i] != 0) {
+                                            ctx.fillText(total_counts[i], pos[i].x, pos[i].y - 5);
+                                        }
+                                    }
+                                }
+                            },
+                            legend: {
+                                display: false,
+                                labels: {
+                                    fontColor: "#000000",
+                                }
+                            },
+                            onClick: function (evt) {
+                                //if a bar is clicked create the table for that ver
+                                var activePoints = myChart.getElementAtEvent(evt);
+                                var firstPoint = activePoints[0];
+                                var deepDiveCat = myChart.data.labels[firstPoint._index];
+                                var ver_pat = myChart.data.datasets[firstPoint._datasetIndex].label;
+                                remove_buttons("version_legend");
+                                create_table(table_columns);
+                                socket.emit('querry', "Safe_Querry: " + deepDiveCat + " " + ver_pat + date_into_for_label_click);
+                                date_into_for_label_click = "";
+                            },
+                            scales: {
+                                yAxes: [{
+                                    stacked: true,
+                                    ticks: {
+                                        stepSize: Math.floor(max_yAxis_step / 3)-1
+                                    }
+                                }],
+                                xAxes: [{
+                                    stacked: true,
+                                    ticks: {
+                                        fontSize: 12,
+                                        fontColor: "#000000",
+                                        autoSkip: false,
+                                        beginAtZero: true
+                                    }
+                                }]
+                            }
+                        }
+                    });
+                    myChart.id = "chart";
+                    var versions_color = [];
+
+                    //get colors for bars and buttons
+                    for (var i = 0; i < versions.length; i++) {
+                        versions_color.push(random_color());
+                    }
+
+                    //sort ddc_arr based on total count
+                    ddc_arr.sort(function (a, b) { return (a.total_count < b.total_count) ? 1 : ((b.total_count < a.total_count) ? -1 : 0); });
+
+                    if (max_num_cat > ddc_arr.length) {
+                        max_num_cat = ddc_arr.length;
+                    }
+
+                    //insert labels into chart -- deepdivecategories are hte labels
+                    for (var i = 0; i < max_num_cat; i++) {
+                        labels.push(ddc_arr[i].ddc);
+                    }
+
+                    //fill the datasets of the chart
+                    for (var i = 0; i < versions.length; i++) {
+                        myChart.data.datasets.push({
+                            label: "",
+                            data: [],
+                            backgroundColor: []
+                        });
+                        //fill the data for the dataset with 0
+                        myChart.data.datasets[i].data = Array(max_num_cat).fill(0);
+                        //set the correct lable and color for the bars
+                        myChart.data.datasets[i].label = versions[i];
+                        myChart.data.datasets[i].backgroundColor = versions_color[i];
+                    }
+
+                    //create button for every version
+                    remove_buttons("version_legend");
+                    var container = document.getElementById("version_legend");
+                    var description = document.createElement("h2");
+                    description.innerHTML = "Versions";
+                    container.appendChild(description);
+                    for (var i = 0; i < versions.length; i++) {
+                        var tmp = versions[i];
+                        if (tmp[tmp.length - 1] != "0" || !tmp.includes("000")) {
+                            var btn = document.createElement("button");
+                            btn.id = "btn";
+                            btn.style.backgroundColor = versions_color[i];
+                            btn.innerHTML = versions[i];
+                            btn.onclick = function () {
+                                //if the button is clicked show that version only
+                                querry_version(this.innerHTML, myChart, vers, max_yAxis_step);
+                            };
+                            container.appendChild(btn);
+                        }
+                    }
+
+                    //create a reset button for chart -- so that the user can go back to the original chart
+                    var container = document.getElementById("version_legend");
+                    var btn = document.createElement("button");
+                    btn.id = "restore_button";
+                    btn.style.backgroundColor = random_color();
+                    btn.innerHTML = "Restore Chart";
+                    btn.onclick = function () {
+                        restore_chart(myChart, max_yAxis_step);
+                    };
+                    container.appendChild(btn);
+
+                    //assign the values in the data array of the datasets with the correct values 
+                    for (var i = 0; i < versions.length; i++) {
+
+                        for (var j = 0; j < max_num_cat; j++) {
+                            var idx = -1;
+                            //see if a category contains version
+                            for (var k = 0; k < ddc_arr[j].array_node.length; k++) {
+                                if (ddc_arr[j].array_node[k].version == versions[i]) {
+                                    idx = k;
+                                }
+                            }
+                            if (idx != -1) {
+                                //assign value if category contians version
+                                myChart.data.datasets[i].data[j] = ddc_arr[j].array_node[idx].count;
+                            }
+                        }
+                    }
+                    myChart.update();
+                    bool = 1;
+
+                }
+                check_t = 0;
+                bool = 0;
+                check = 1;
+                info = "";
+                res = "";
+                node = {
+                    version: "",
+                    count: 0
+                };
+                done = 1;
+            }
+            else {
+                //get data packet and parse 
+                var tmp = msg.split(" ");
+                var a = tmp.length - 1;
+                var p;
+                var v;
+                var str = "";
+                while (isNaN(parseFloat(tmp[a]))) {
+                    if (tmp[a] == " ") {
+                        tmp.splice(a, 1);
+                    }
+                    a--;
+                }
+                //see if the data contains a patch
+                if (msg.includes("000")) {
+                    p = tmp[a];
+                    v = tmp[a - 1];
+                    tmp.splice(a, 1);
+                    tmp.splice(a - 1, 1);
+                }
+                else {
+                    v = tmp[a];
+                    p = tmp[a + 1];
+                    tmp.splice(a, 1);
+                    tmp.splice(a + 1, 1);
+                }
+                var version_patch = v + p;
+                if (!versions.includes(version_patch)) {
+                    versions.push(version_patch);
+                }
+                var str = tmp.join('_');
+                if (str[str.length - 1] == '_') {
+                    str = str.slice(0, -1);
+                    str = str.slice(0, -1);
+                    str = str.slice(0, -1);
+                    str = str.slice(0, -1);
+                }
+                else {
+                    str = str.slice(0, -1);
+                    str = str.slice(0, -1);
+                }
+                //assign the version and deepdivecategory to the ddc_arr
+                var idx = -1;
+                var index = -1;
+                for (var i = 0; i < ddc_arr.length; i++) {
+                    if (ddc_arr[i].ddc == str) {
+                        idx = i;
+                    }
+                }
+                //if ddc_arr contains ddc then just check if the version ois contained by the ddc object and increase count accordingly 
+                if (idx != -1) {
+                    ddc_arr[idx].total_count++;
+                    for (var i = 0; i < ddc_arr[idx].array_node.length; i++) {
+                        if (ddc_arr[idx].array_node[i].version == version_patch) {
+                            index = i;
+                        }
+                    }
+                    if (index != -1) {
+                        ddc_arr[idx].array_node[index].count++;
+                    } else {
+                        var nde = {
+                            version: version_patch,
+                            count: 1
+                        }
+                        ddc_arr[idx].array_node.push(nde);
+                    }
+
+                }
+                else {
+                    //if new ddc then add new object to ddc_arr
+                    var nde = {
+                        version: version_patch,
+                        count: 1
+                    }
+                    var nde_arr = [];
+                    nde_arr.push(nde);
+                    ddc_arr[check_t] = { array_node: nde_arr, total_count: 1, ddc: str };
+                    check_t++;
+                }
+                
+            }
+        });
+        
+
+        //if query accepted then get date for the label clicks 
+        socket.on('accept', function (msg) {
+            date_into_for_label_click = " " + msg;
+        });
+
+        //when a bar is clicked in the chart another query is made by the server and the packets are sent to this func 
+        //this func takes the packets and constructs rows of data and appends them to the table
+        socket.on('expand_data', function (msg) {
+            done = 0;
+            if (check == 1) {
+                row = document.createElement('tr');
+                check++;
+            }
+            if (msg == "done") {
+                done = 1;
+            }
+            else if (msg == "<br \>") {
+                var tbl = document.getElementById("data_table");
+                tbl.appendChild(row);
+                check = 1;
+            }
+            else {
+                var cell = document.createElement("td");
+                if (msg.length > 50) {
+                    cell.style.width = "250px";
+                }
+                var cellText = document.createTextNode(msg);
+                cell.appendChild(cellText);
+                row.appendChild(cell);
+            }
+        });
+
+
+
+        function callServer() {
+
+            //make sure the user cant click while a query is made
+            if (done == 1) {
+
+                ddc_arr = [{
+                    array_node: [],
+                    total_count: 0,
+                    ddc: ""
+                }];
+                versions = [];
+                versions_color = [];
+                labels = [];
+                node_arr = [];
+                dta = [];
+                max_yAxis_step = 50;
+                //if a table is alrady created, delete it
+                if (document.getElementById("data_table") != null) {
+                    var elem = document.getElementById("data_table");
+                    elem.parentNode.removeChild(elem);
+                }
+
+                //this gets the number of categoreis the user wants back -- default is 30
+                if (document.getElementById("Max_Number_Category").value != "" && !isNaN(parseInt(document.getElementById("Max_Number_Category").value))) {
+                    var num = parseInt(document.getElementById("Max_Number_Category").value);
+                    if (num < 1) {
+                        max_num_cat = 30;
+                    }
+                    else {
+                        max_num_cat = num;
+                    }
+                }
+                //get the information from the input boxes
+                if (document.getElementById("From_Year_input").value == "") {
+                    info += "No_From_Year ";
+                }
+                else {
+                    info += document.getElementById("From_Year_input").value + " ";
+                }
+
+                if (document.getElementById("From_Week_input").value == "") {
+                    info += "No_From_Week ";
+                }
+
+                else {
+                    info += document.getElementById("From_Week_input").value + " ";
+                }
+
+                if (document.getElementById("To_Year_input").value == "") {
+                    info += "No_To_Year ";
+                }
+                else {
+                    info += document.getElementById("To_Year_input").value + " ";
+                }
+
+                if (document.getElementById("To_Week_input").value == "") {
+                    info += "No_To_Week";
+                }
+                else {
+                    info += document.getElementById("To_Week_input").value;
+                }
+                socket.emit('querry', info);
+
+            }
+        };
+
+        //if a problem with the server occurs we need to display the error message
+        socket.on('decline', function (msg) {
+            alert(msg);
+        });
+
+        //creates the first row of the table which is the column names
+        function create_table(table_columns) {
+            var totalRows = 1;
+            var cellsInRow = table_columns.length;
+            var id = 0;
+            var max = 10;
+
+            var elem = document.getElementById("CursorLayer");
+            while (elem != null) {
+                elem.parentNode.removeChild(elem);
+                elem = document.getElementById("CursorLayer");
+            }
+            // get the reference for the body
+            var div1 = document.getElementById('div1');
+
+            // creates a <table> element
+            var tbl = document.createElement("table");
+            tbl.width = "100%";
+            tbl.id = "data_table";
+            // creating rows
+            for (var r = 0; r < totalRows; r++) {
+                var row = document.createElement("tr");
+
+                // create cells in row
+                for (var c = 0; c < cellsInRow; c++) {
+                    var cell = document.createElement("td");
+                    cell.addEventListener("click", function () {
+                        determine_sort(this);
+                    });
+                    if (table_columns[c] == "TroubleShootComments") {
+
+                        cell.style = "width: 30%";
+                    }
+                    cell.id = c.toString();
+                    var cellText = document.createTextNode(table_columns[c]);
+                    cell.appendChild(cellText);
+                    row.appendChild(cell);
+                }
+
+                tbl.appendChild(row); // add the row to the end of the table body
+            }
+
+            div1.appendChild(tbl); // appends <table> into <div1>
+        }
+
+        //creates a random color
+        function random_color() {
+            var color = '#';
+            var color_vals = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'];
+            for (var i = 0; i < 6; i++) {
+                var r = Math.floor((Math.random() * 16) + 1);
+                color += color_vals[r - 1];
+            }
+            return color;
+        }
+
+        //determine if the table column that was clicked contains numbers or strings
+        function determine_sort(cell) {
+            var id = parseInt(cell.id);
+            if (id <= 5) {
+                int_sort(cell.id);
+            }
+            else {
+                char_sort(cell.id);
+            }
+        }
+
+        //this is a integer sort for the table if the column is clicked
+        function int_sort(id) {
+            var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+            table = document.getElementById("data_table");
+            switching = true;
+            dir = "asc";
+            while (switching) {
+                switching = false;
+                rows = table.getElementsByTagName("TR");
+                for (i = 1; i < (rows.length - 1); i++) {
+                    shouldSwitch = false;
+                    x = rows[i].getElementsByTagName("TD")[id];
+                    y = rows[i + 1].getElementsByTagName("TD")[id];
+                    if (dir == "asc") {
+                        var l = parseInt(x.innerHTML);
+                        var r = parseInt(y.innerHTML);
+                        if (l > r) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (dir == "desc") {
+                        var l = parseInt(x.innerHTML);
+                        var r = parseInt(y.innerHTML);
+                        if (l < r) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    }
+                }
+                if (shouldSwitch) {
+                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                    switching = true;
+                    switchcount++;
+                } else {
+                    if (switchcount == 0 && dir == "asc") {
+                        dir = "desc";
+                        switching = true;
+                    }
+                }
+            }
+        }
+
+        //string sort for table if column is clicked
+        function char_sort(id) {
+            var table, rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+            table = document.getElementById("data_table");
+            switching = true;
+            dir = "asc";
+            while (switching) {
+                switching = false;
+                rows = table.getElementsByTagName("TR");
+                for (i = 1; i < (rows.length - 1); i++) {
+                    shouldSwitch = false;
+                    x = rows[i].getElementsByTagName("TD")[id];
+                    y = rows[i + 1].getElementsByTagName("TD")[id];
+                    if (dir == "asc") {
+                        if (x.innerHTML.toLowerCase() > y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    } else if (dir == "desc") {
+                        if (x.innerHTML.toLowerCase() < y.innerHTML.toLowerCase()) {
+                            shouldSwitch = true;
+                            break;
+                        }
+                    }
+                }
+                if (shouldSwitch) {
+                    rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                    switching = true;
+                    switchcount++;
+                } else {
+                    if (switchcount == 0 && dir == "asc") {
+                        dir = "desc";
+                        switching = true;
+                    }
+                }
+            }
+        }
+    </script>
+</body>
+</html>
